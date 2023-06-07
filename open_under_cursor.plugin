@@ -1,0 +1,10 @@
+[Plugin]
+Loader=python3
+Module=open_under_cursor
+IAge=3
+Name=Open File Under Cursor
+Description=Opens the file named under the cursor into a new tab
+Authors=Éric Piel
+Copyright=Copyright (c) Éric Piel
+Website=
+Icon=text-x-script
