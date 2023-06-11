@@ -1,3 +1,8 @@
+"""
+Created on Jun 06, 2023
+
+@author: Éric Piel
+"""
 # gedit plugin to automatically open in a new tab the file based on the name under the cursor.
 # This is triggered with Ctrl+Shift+O
 # This is a similar feature as in vim the "gf" function.
@@ -5,12 +10,57 @@
 # Otherwise, the file name is guessed as the word around the cursor.
 
 import os
+import re
+from typing import Optional
 
 import gi
-gi.require_version('Gdk', '3.0')
-gi.require_version('Gtk', '3.0')
 gi.require_version('Gedit', '3.0')
-from gi.repository import GObject, Gtk, Gedit, Gdk, Gio
+from gi.repository import GObject, Gedit, Gio
+
+# Any separator for the filenames, encoded as a regex.
+# These are not the "forbidden" characters
+# from a filename according to the OS. These are just the characters that are
+# more likely to be before or after a filename than in the filename.
+FILENAME_SEPARATORS = r'\s\",:()[\]{}'
+
+
+# TODO: change to take the regex of a *word* instead of a separator? This could allow
+# to search for words that contain a ., but which don't end with a .
+def get_word_around_index(line: str, idx: int, separators: str=r"\s") -> Optional[str]:
+    """
+    Get the word around the specified index in a given line.
+    It return the word which has a character on the given idx, as well as for which
+    the last character is just before idx. For instance, " The", with indices 1,2,3,4
+    will return "The".
+
+    Args:
+        line: The line of text to extract the word from.
+        idx (0 .. len(line)): The index to locate the word around.
+        separators: a regex pattern defining the set of characters that separate words.
+        Defaults to whitespaces.
+
+    Returns:
+        str: The word found around the specified index, or None if no word is found.
+
+    Raises:
+        ValueError: If the specified index is out of range.
+    """
+    if idx > len(line):
+        raise ValueError(f"idx {idx} > than line length of {len(line)}.")
+
+    re_word = f"[^{separators}]+"
+
+    # Go through every every word, until it finds the one spanning over the index.
+    for m in re.finditer(re_word, line):
+        if m.start() <= idx <= m.end():
+            # we are just on the right word
+            return m.group()
+        elif m.start() > idx:
+            # Too far, not need to search more
+            break
+
+    return None
+
 
 class OpenSelectedFilePluginApp(GObject.Object, Gedit.AppActivatable):
     app = GObject.property(type=Gedit.App)
@@ -27,6 +77,7 @@ class OpenSelectedFilePluginApp(GObject.Object, Gedit.AppActivatable):
     def do_deactivate(self):
         self.app.set_accels_for_action("win.open-under-cursor", ())
 
+
 class OpenSelectedFilePlugin(GObject.Object, Gedit.WindowActivatable):
     __gtype_name__ = "OpenSelectedFilePlugin"
     window = GObject.property(type=Gedit.Window)
@@ -36,47 +87,40 @@ class OpenSelectedFilePlugin(GObject.Object, Gedit.WindowActivatable):
 
     def do_activate(self):
         # Create an action
-        action = Gio.SimpleAction(name="open-under-cursor")#, label="Open File Under Cursor", tooltip="Display the path of the current document")
+        action = Gio.SimpleAction(name="open-under-cursor")  # , label="Open File Under Cursor", tooltip="Display the path of the current document")
         action.connect("activate", self.open_file)
 
         # Add the action to the Gedit window
         self.window.add_action(action)
 
-        # Set the accelerator for the action
-#        self.window.set_accels_for_action("win.open-under-cursor", ["<Ctrl><Shift>O"])
-
     def do_deactivate(self):
         # Remove the action from the Gedit window
         self.window.remove_action("open-under-cursor")
 
-        # Remove the accelerator for the action
-#        self.window.unset_accels_for_action("win.open-under-cursor")
-
     def open_file(self, action, data):
         # Get the current text selection
         selection = self.get_selected_text()
-        
+
         if not selection:
             # If selection is empty, get the word around the cursor
             selection = self.get_word_around_cursor()
 
-        print(f"selection: {selection}")
+        # print(f"selection: {selection}")
         if selection:
+            # TODO: if the selection starts with http:// -> open in a browser
             # Check if the file exists
-            # TODO: don't use the current working dir from the process, but the path from current document
-#            selection_path = os.path.abspath(selection)
             selection_path = self.get_abs_path_from_current_doc(selection)
-            print(f"full path: {selection_path}")
+            # print(f"full path: {selection_path}")
 
             # Check if the file exists
             if os.path.exists(selection_path):
                 # Open the file in a new tab
                 location = Gio.file_new_for_path(selection_path)
-                self.window.create_tab_from_location(location, None, 0, 0, False, True)
+                # TODO: if URI is already opened, jump to the tab, instead of opening another one
+                self.window.create_tab_from_location(location, None, 0, 0, False, True)  # location, encoding, line, column, create, jump_to
             else:
-                # A better, but still subtile way to indicate the shortcut was received, but the filename doesn't match anything?
+                # A better, but still subtle way to indicate the shortcut was received, but the filename doesn't match anything?
                 print(f"Couldn't find file '{selection_path}', not opening it")
-
 
     def get_abs_path_from_current_doc(self, path: str) -> str:
         """
@@ -90,12 +134,12 @@ class OpenSelectedFilePlugin(GObject.Object, Gedit.WindowActivatable):
         else:
             doc = self.window.get_active_document()
 
-            if not doc: # Shouldn't happen
+            if not doc:  # Shouldn't happen
                 return path
             file_uri = doc.get_uri_for_display()  # Typically, just the path, but could start with "file://" ??
-            
-            print(f"current uri = {file_uri}")
-            file_path = doc.get_uri_for_display().replace('file://', '')  # Remove the file:// in case it's there
+
+            # print(f"current uri = {file_uri}")
+            file_path = file_uri.replace('file://', '')  # Remove the file:// in case it's there
             base = os.path.dirname(file_path)
             return os.path.join(base, path)
 
@@ -131,26 +175,13 @@ class OpenSelectedFilePlugin(GObject.Object, Gedit.WindowActivatable):
         if not end_iter.ends_line():
             end_iter.forward_to_line_end()
         line_str = doc.get_text(start_iter, end_iter, True)
-        print(f"cursor at {cursor_pos}, line: {line_str}")
-        # Get the word boundaries around the cursor
-#        start_iter, end_iter = doc.get_word_at_cursor(cursor)
+        # print(f"cursor at {cursor_pos}, line: {line_str}")
 
-#        if start_iter and end_iter:
-#            # Get the word text
-#            return doc.get_text(start_iter, end_iter, True)
-        word = self.get_word_around_index(line_str, cursor_pos)
-        print(f"found word: {word}")
-        if word == "":
-            return None
-        
+        word = get_word_around_index(line_str, cursor_pos, FILENAME_SEPARATORS)
+        # print(f"found word: {word}")
+        # Trick: usually a filename doesn't end with a . (but they can contain some)
+        # so drop the last ".".
+        if len(word) > 1 and word[-1] == ".":
+            word = word[:-1]
+
         return word
-
-    def get_word_around_index(self, line, idx):
-        # TODO: use regex, to match a set of characters, not just space (see "ifsname" from vim): " \t,"
-        before_idx = line.rfind(" ", 0, idx) + 1 # returns -1 if not found => idx at 0
-        after_idx = line.find(" ", idx)  # returns -1 if not found => idx at the end
-        if after_idx == -1:
-            after_idx = None  # means "until the end"
-        print(f"found indices {before_idx} -> {after_idx}")
-        return line[before_idx:after_idx]
-
