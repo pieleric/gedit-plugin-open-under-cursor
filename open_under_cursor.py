@@ -14,6 +14,7 @@ import re
 from typing import Optional
 
 import gi
+import webbrowser
 gi.require_version('Gedit', '3.0')
 from gi.repository import GObject, Gedit, Gio
 
@@ -21,7 +22,8 @@ from gi.repository import GObject, Gedit, Gio
 # These are not the "forbidden" characters
 # from a filename according to the OS. These are just the characters that are
 # more likely to be before or after a filename than in the filename.
-FILENAME_SEPARATORS = r'\s\",:()[\]{}'
+#FILENAME_SEPARATORS = r'\s\",:()[\]{}'
+FILENAME_SEPARATORS = r'\s\",()[\]{}'  # no :, to support URLs (ideally, we would consider :// as a special case)
 
 
 # TODO: change to take the regex of a *word* instead of a separator? This could allow
@@ -60,6 +62,14 @@ def get_word_around_index(line: str, idx: int, separators: str=r"\s") -> Optiona
             break
 
     return None
+
+
+def is_web_url(url: str) -> bool:
+    """
+    returns: True if the given URL (or path) looks like a web URL
+    """
+    web_protocols = ['http://', 'https://', 'ftp://']
+    return any(url.startswith(protocol) for protocol in web_protocols)
 
 
 class OpenSelectedFilePluginApp(GObject.Object, Gedit.AppActivatable):
@@ -107,20 +117,24 @@ class OpenSelectedFilePlugin(GObject.Object, Gedit.WindowActivatable):
 
         # print(f"selection: {selection}")
         if selection:
-            # TODO: if the selection starts with http:// -> open in a browser
-            # Check if the file exists
-            selection_path = self.get_abs_path_from_current_doc(selection)
-            # print(f"full path: {selection_path}")
-
-            # Check if the file exists
-            if os.path.exists(selection_path):
-                # Open the file in a new tab
-                location = Gio.file_new_for_path(selection_path)
-                # TODO: if URI is already opened, jump to the tab, instead of opening another one
-                self.window.create_tab_from_location(location, None, 0, 0, False, True)  # location, encoding, line, column, create, jump_to
+            # if the selection looks like a webpage, (ex, http://google.com) => open in a browser
+            if is_web_url(selection):
+                webbrowser.open(selection)
             else:
-                # A better, but still subtle way to indicate the shortcut was received, but the filename doesn't match anything?
-                print(f"Couldn't find file '{selection_path}', not opening it")
+                # Check if the file exists
+                selection_path = self.get_abs_path_from_current_doc(selection)
+                # print(f"full path: {selection_path}")
+
+                # Check if the file exists
+                if os.path.exists(selection_path):
+                    # Open the file in a new tab
+                    location = Gio.file_new_for_path(selection_path)
+                    # TODO: if URI is already opened, jump to the tab, instead of opening another one
+                    # See https://github.com/addiks/gedit-window-management/blob/0dd12c462af53ad4153f35f8c774c9dcfccf8ab9/AddiksWindowManagementWindow.py#L98
+                    self.window.create_tab_from_location(location, None, 0, 0, False, True)  # location, encoding, line, column, create, jump_to
+                else:
+                    # A better, but still subtle way to indicate the shortcut was received, but the filename doesn't match anything?
+                    print(f"Couldn't find file '{selection_path}', not opening it")
 
     def get_abs_path_from_current_doc(self, path: str) -> str:
         """
