@@ -150,7 +150,8 @@ class OpenSelectedFilePlugin(GObject.Object, Gedit.WindowActivatable):
 
             if not doc:  # Shouldn't happen
                 return path
-            file_uri = doc.get_uri_for_display()  # Typically, just the path, but could start with "file://" ??
+            # file_uri = doc.get_uri_for_display()  # removed in v40
+            file_uri = doc.get_file().get_location().get_uri() # Typically, just the path, but could start with "file://" ??
 
             # print(f"current uri = {file_uri}")
             file_path = file_uri.replace('file://', '')  # Remove the file:// in case it's there
