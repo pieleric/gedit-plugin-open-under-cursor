@@ -6,5 +6,5 @@ Name=Open File Under Cursor
 Description=Opens the file named under the cursor into a new tab
 Authors=Éric Piel
 Copyright=Copyright (c) Éric Piel
-Website=
+Website=https://github.com/pieleric/gedit-plugin-open-under-cursor
 Icon=text-x-script
