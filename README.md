@@ -32,5 +32,6 @@ Alternatively, if you want to easily modify the code in the git repository:
 
 Development
 -----------
-Tested on gedit version 3.36.
+Tested on gedit version 3.36 and 40.
 For the API documentation, see https://developer-old.gnome.org/gedit/3.30/ .
+Newer version: https://gedit-technology.github.io/developer-docs/gedit/ .
